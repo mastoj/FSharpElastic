@@ -10,17 +10,34 @@ type Operator =
     | And
     | Or
 
+let operatorToJson o = 
+    match o with
+    | And -> "\"and\""
+    | Or -> "\"or\""
+
 type ZeroTermsQuery = 
     | All
+    | None
 
-type MessageOptions = 
+let zeroTermsQueryToJson ztq =
+    match ztq with 
+    | All -> "\"all\""
+    | None -> "\"none\""
+
+type MessageOption = 
     | Operator of Operator
     | ZeroTermsQuery of ZeroTermsQuery
     | CutoffFrequency of double
 
+let messageOptionToJson mo =
+    match mo with
+    | Operator o -> sprintf "\"operator: %s" (operatorToJson o)
+    | ZeroTermsQuery ztq -> sprintf "\"zero_terms_query: %s" (zeroTermsQueryToJson ztq)
+    | CutoffFrequency cfq -> sprintf "\"cutoff_frequency: %f" cfq
+
 type Message = 
     | QueryString of string
-    | Options of query: string * MessageOptions list
+    | Options of query: string * MessageOption list
 
 type QueryStringOptions = 
     | DefaultField of string
@@ -56,3 +73,20 @@ type SearchQuery =
 
 let simpleMatch = Query(Match(Message.QueryString("tomas")))
 let complexMatch = Query(Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
+
+let messageToJson message =
+    match message with
+    | Message.QueryString str -> sprintf "\"%s\"" str
+    | Options (q, mos) -> 
+        let query = sprintf "\"query\": \"%s\"" q
+        let options = query :: (List.map messageOptionToJson mos)
+        let optionsString = String.concat ", " options
+        sprintf "{ %s }" optionsString
+        //sprintf "{ \"query\": \"%s\", hello" q
+
+let queryToJson query = 
+    match query with
+    | Match message -> sprintf "{ \"match\" : %s }" (messageToJson message)
+
+let jsonQuery = queryToJson (Match(Message.QueryString("tomas")))
+let jsonQuery2 = queryToJson (Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
