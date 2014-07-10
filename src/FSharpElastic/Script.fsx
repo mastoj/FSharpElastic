@@ -3,6 +3,22 @@
 
 #load "Library1.fs"
 open FSharpElastic
+open Microsoft.FSharp.Quotations
+open Microsoft.FSharp.Quotations.Patterns
+
+exception InvalidPropertyExpression
+exception NotALambdaExpression
+
+let propExprToString expr = 
+    let rec innerExprToString x expr = 
+        match expr with
+        | PropertyGet(Some(x), y, __) -> y.Name
+        | PropertyGet(Some(a), y, []) -> sprintf "%s.%s" (innerExprToString x a) y.Name
+        | PropertyGet(Some(a), y, _) -> sprintf "%s" (innerExprToString x a)
+        | _ -> raise InvalidPropertyExpression
+    match expr with
+    | Lambda(x, expr') -> innerExprToString x expr'
+    | _ -> raise NotALambdaExpression
 
 // Define your library scripting code here
 
@@ -24,20 +40,35 @@ let zeroTermsQueryToJson ztq =
     | All -> "\"all\""
     | None -> "\"none\""
 
-type MessageOption = 
+type MatchOption = 
     | Operator of Operator
     | ZeroTermsQuery of ZeroTermsQuery
     | CutoffFrequency of double
 
-let messageOptionToJson mo =
+let matchOptionToJson mo =
     match mo with
     | Operator o -> sprintf "\"operator: %s" (operatorToJson o)
     | ZeroTermsQuery ztq -> sprintf "\"zero_terms_query: %s" (zeroTermsQueryToJson ztq)
     | CutoffFrequency cfq -> sprintf "\"cutoff_frequency: %f" cfq
 
-type Message = 
-    | QueryString of string
-    | Options of query: string * MessageOption list
+type Field<'T, 'TR> = Expr<'T -> 'TR> * 'TR
+type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
+
+type SingelField<'T> =
+    | All of query:string
+    | IntField of Field<'T, int>
+    | StringField of Field<'T, int>
+
+let keyValueToString k v =
+    sprintf "\"%s\": \"%O\"" k v
+
+let singleFieldToJson field =
+    match field with 
+    | All(q) -> keyValueToString "_all" q
+
+type MatchQuery<'T> = 
+    | Simple of SingelField<'T>
+//    | Options of propertySelector: Expr<'T -> string> * query: string * options: MatchOption list
 
 type QueryStringOptions = 
     | DefaultField of string
@@ -56,37 +87,73 @@ type BoolOptions =
     | MinimumShouldMatch
     | Boost
 
-type Query =
-    | Match of message: Message
+type Query<'T> =
+    | Match of MatchQuery<'T>
     | QueryString of options: QueryStringOptions list
     | MultiMatch of query: string * MultiMatchOptions
-    | Bool of clauses: BoolClause list * options: BoolOptions
+    | Bool of clauses: BoolClause<'T> list * options: BoolOptions
 
-and BoolClause = 
-    | Must of query: Query
-    | MustNot of query: Query
-    | Should of queries: Query list
+and BoolClause<'T> = 
+    | Must of query: Query<'T>
+    | MustNot of query: Query<'T>
+    | Should of queries: Query<'T> list
 
-type SearchQuery = 
-    | Query of Query
+type SearchQuery<'T> = 
+    | Query of Query<'T>
 
+type searchDocument = {PropX: string}
 
-let simpleMatch = Query(Match(Message.QueryString("tomas")))
-let complexMatch = Query(Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
+//let simpleMatch = Query(Match(Match.QueryString("tomas")))
+//let complexMatch = Query(Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
 
-let messageToJson message =
-    match message with
-    | Message.QueryString str -> sprintf "\"%s\"" str
-    | Options (q, mos) -> 
-        let query = sprintf "\"query\": \"%s\"" q
-        let options = query :: (List.map messageOptionToJson mos)
-        let optionsString = String.concat ", " options
-        sprintf "{ %s }" optionsString
+let matchToJson matchQuery =
+    match matchQuery with
+    | Simple(field) -> 
+        singleFieldToJson field
+//    | Options (q, mos) -> 
+//        let query = sprintf "\"query\": \"%s\"" q
+//        let options = query :: (List.map messageOptionToJson mos)
+//        let optionsString = String.concat ", " options
+//        sprintf "{ %s }" optionsString
         //sprintf "{ \"query\": \"%s\", hello" q
 
 let queryToJson query = 
     match query with
-    | Match message -> sprintf "{ \"match\" : %s }" (messageToJson message)
+    | Match message -> sprintf "{ \"match\" : { %s } }" (matchToJson message)
 
-let jsonQuery = queryToJson (Match(Message.QueryString("tomas")))
-let jsonQuery2 = queryToJson (Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
+type Sample = {PropX: string}
+let lambda = <@ fun (x:Sample) -> x.PropX @>
+let jsonQuery = queryToJson (Match(Simple(lambda, "tomas")))
+//let jsonQuery2 = queryToJson (Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
+
+
+//open System
+//open Microsoft.FSharp.Quotations
+//open Microsoft.FSharp.Quotations.Patterns
+type Matchx = 
+    | Simple of Expr * string
+//    | WithOptions of string * string 
+
+type Y = {ya: string; yb: int}
+type X = {a: string; b: int; ys: Y list}
+let lambda2 = <@ fun (x:X) -> x.ys.[0].ya @>
+let x = {a = "Tomas"; b = 10; ys = []}
+let compXa = <@ x.a @>
+let compXYa = <@ x.ys.[0].ya @>
+let compXY = <@ x.ys @>
+let simpleMatchx = Simple(compXa, "this is my query")
+let advMatchx = Simple(compXYa, "this is my query")
+let lambdaComp = <@ fun (x:X) -> x.a @>
+
+
+//(PropertyGet (
+//    Some (PropertyGet (
+//        Some (PropertyGet (
+//            Some (PropertyGet (
+//                None, x, []))
+//            , ys, []))
+//        , Item, [Value (0)]))
+//    , ya,[]))
+//type SearchQuery2<'T> =
+//    | Match of Matchx<'T>
+
