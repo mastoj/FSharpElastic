@@ -145,15 +145,23 @@ let simpleMatchx = Simple(compXa, "this is my query")
 let advMatchx = Simple(compXYa, "this is my query")
 let lambdaComp = <@ fun (x:X) -> x.a @>
 
-
-//(PropertyGet (
-//    Some (PropertyGet (
-//        Some (PropertyGet (
-//            Some (PropertyGet (
-//                None, x, []))
-//            , ys, []))
-//        , Item, [Value (0)]))
-//    , ya,[]))
-//type SearchQuery2<'T> =
-//    | Match of Matchx<'T>
-
+let getPropertyChain expr = 
+    let rec innerExprToString expr res = 
+        match expr with
+        | PropertyGet(Some(a), y, []) -> 
+            (printf "some ")
+            match a with
+            | PropertyGet(z) -> 
+                (printf "Name: %s " y.Name)
+                innerExprToString a (y.Name::res)
+            | _ -> 
+                (printf "Res: %O " res)
+                res            
+        | PropertyGet(Some(a), y, _) -> 
+            (printf "array")
+            innerExprToString a res
+        | _ -> raise InvalidPropertyExpression
+    match expr with
+    | Lambda(x, expr') -> innerExprToString expr' []
+    | _ -> raise NotALambdaExpression
+    
