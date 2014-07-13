@@ -9,16 +9,21 @@ open Microsoft.FSharp.Quotations.Patterns
 exception InvalidPropertyExpression
 exception NotALambdaExpression
 
-let propExprToString expr = 
-    let rec innerExprToString x expr = 
+let getPropertyChain expr = 
+    let rec innerExprToString expr res = 
         match expr with
-        | PropertyGet(Some(x), y, __) -> y.Name
-        | PropertyGet(Some(a), y, []) -> sprintf "%s.%s" (innerExprToString x a) y.Name
-        | PropertyGet(Some(a), y, _) -> sprintf "%s" (innerExprToString x a)
+        | PropertyGet(Some(a), y, []) -> 
+            match a with
+            | PropertyGet(z) -> innerExprToString a (y.Name::res)
+            | _ -> (y.Name::res)            
+        | PropertyGet(Some(a), y, _) -> innerExprToString a res
         | _ -> raise InvalidPropertyExpression
     match expr with
-    | Lambda(x, expr') -> innerExprToString x expr'
+    | Lambda(x, expr') -> innerExprToString expr' []
     | _ -> raise NotALambdaExpression
+
+let getPropExprString expr = 
+    expr |> getPropertyChain |> List.map (fun s -> s.ToLower()) |> String.concat "."
 
 // Define your library scripting code here
 
@@ -52,23 +57,39 @@ let matchOptionToJson mo =
     | CutoffFrequency cfq -> sprintf "\"cutoff_frequency: %f" cfq
 
 type Field<'T, 'TR> = Expr<'T -> 'TR> * 'TR
-type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
 
-type SingelField<'T> =
-    | All of query:string
-    | IntField of Field<'T, int>
-    | StringField of Field<'T, int>
+type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
 
 let keyValueToString k v =
     sprintf "\"%s\": \"%O\"" k v
 
+let fieldToJson ((expr, value):Field<'T, 'TR>) = 
+    let propertyKey = getPropExprString expr
+    keyValueToString propertyKey value
+
+let getFieldKey (expr, _) = getPropExprString expr
+let getFieldValue (_, value) = sprintf "%O" value
+
+type SingleField<'T> =
+    | All of query:string
+    | IntField of Field<'T, int>
+    | StringField of Field<'T, string>
+    with
+        member this.GetKey =
+            match this with
+            | All(_) -> "_all"
+            | IntField(f) -> getFieldKey f
+            | StringField(f) -> getFieldKey f
+        member this.GetQuery =
+            match this with
+            | All(query) -> query
+            | IntField(f) -> getFieldValue f
+            | StringField(f) -> getFieldValue f
+
 let singleFieldToJson field =
     match field with 
     | All(q) -> keyValueToString "_all" q
-
-type MatchQuery<'T> = 
-    | Simple of SingelField<'T>
-//    | Options of propertySelector: Expr<'T -> string> * query: string * options: MatchOption list
+    | StringField(f) -> fieldToJson f
 
 type QueryStringOptions = 
     | DefaultField of string
@@ -88,7 +109,7 @@ type BoolOptions =
     | Boost
 
 type Query<'T> =
-    | Match of MatchQuery<'T>
+    | Match of SingleField<'T> * options: MatchOption list
     | QueryString of options: QueryStringOptions list
     | MultiMatch of query: string * MultiMatchOptions
     | Bool of clauses: BoolClause<'T> list * options: BoolOptions
@@ -103,65 +124,26 @@ type SearchQuery<'T> =
 
 type searchDocument = {PropX: string}
 
-//let simpleMatch = Query(Match(Match.QueryString("tomas")))
-//let complexMatch = Query(Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
-
-let matchToJson matchQuery =
-    match matchQuery with
-    | Simple(field) -> 
+let matchToJson<'T> (field: SingleField<'T>, options: MatchOption list) =
+    match field, options with
+    | (field, []) -> 
         singleFieldToJson field
-//    | Options (q, mos) -> 
-//        let query = sprintf "\"query\": \"%s\"" q
-//        let options = query :: (List.map messageOptionToJson mos)
-//        let optionsString = String.concat ", " options
-//        sprintf "{ %s }" optionsString
-        //sprintf "{ \"query\": \"%s\", hello" q
+    | (field, options) -> 
+        let options = options |> List.map matchOptionToJson
+        let queryKey = sprintf "\"%s\"" field.GetKey
+        let value = field.GetQuery
+        let query = keyValueToString "query" value 
+        let allOptionsString = String.concat ", " (query::options)
+        sprintf "%s: { %s }" queryKey allOptionsString
 
 let queryToJson query = 
     match query with
-    | Match message -> sprintf "{ \"match\" : { %s } }" (matchToJson message)
-
-type Sample = {PropX: string}
-let lambda = <@ fun (x:Sample) -> x.PropX @>
-let jsonQuery = queryToJson (Match(Simple(lambda, "tomas")))
-//let jsonQuery2 = queryToJson (Match(Options("tomas", [Operator(And); ZeroTermsQuery(All); CutoffFrequency(0.001)])))
-
-
-//open System
-//open Microsoft.FSharp.Quotations
-//open Microsoft.FSharp.Quotations.Patterns
-type Matchx = 
-    | Simple of Expr * string
-//    | WithOptions of string * string 
+    | Match (q, options) -> sprintf "{ \"match\" : { %s } }" (matchToJson (q, options))
 
 type Y = {ya: string; yb: int}
 type X = {a: string; b: int; ys: Y list}
 let lambda2 = <@ fun (x:X) -> x.ys.[0].ya @>
-let x = {a = "Tomas"; b = 10; ys = []}
-let compXa = <@ x.a @>
-let compXYa = <@ x.ys.[0].ya @>
-let compXY = <@ x.ys @>
-let simpleMatchx = Simple(compXa, "this is my query")
-let advMatchx = Simple(compXYa, "this is my query")
-let lambdaComp = <@ fun (x:X) -> x.a @>
 
-let getPropertyChain expr = 
-    let rec innerExprToString expr res = 
-        match expr with
-        | PropertyGet(Some(a), y, []) -> 
-            (printf "some ")
-            match a with
-            | PropertyGet(z) -> 
-                (printf "Name: %s " y.Name)
-                innerExprToString a (y.Name::res)
-            | _ -> 
-                (printf "Res: %O " res)
-                res            
-        | PropertyGet(Some(a), y, _) -> 
-            (printf "array")
-            innerExprToString a res
-        | _ -> raise InvalidPropertyExpression
-    match expr with
-    | Lambda(x, expr') -> innerExprToString expr' []
-    | _ -> raise NotALambdaExpression
+//let jsonQuery = queryToJson (Match(StringField(lambda, "tomas"), []))
+let jsonQuery2 = queryToJson (Match(StringField(lambda2, "tomas"), [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And)]))
     
