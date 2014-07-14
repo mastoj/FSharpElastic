@@ -93,14 +93,27 @@ let matchToToken<'T> ((f : SingleField<'T>), opts) =
                   |> List.toArray
         JsonValue.Record(obj)
 
-    
-//        | Must of Query<'T>
-//    | MustNot of Query<'T>
-//    | Should of Query<'T> list
 
-//let multiMatchToToken query fields options = 
-//    let items = ("query", JsonValue.String(query))::("fields", (fields |> getPropExprString |> List.map (fun p -> JsonValue.String(p)) |> (fun (ps) -> JsonValue.Array(List.toArray ps))))
-//    items
+let getMultiMatchTypeString = function
+    | BestField -> "best_field"
+    | MostFields -> "most_fields"
+    | CrossFields -> "cross_fields"
+    | Phrase -> "phrase"
+    | PhrasePrefix -> "phrase_prefix"
+
+let commonOptionToRecordEntry co = ("", JsonValue.Boolean(true))
+
+let multiMatchOptionToJValue = function
+    | Type(t) -> ("type", JsonValue.String(getMultiMatchTypeString t))
+    | TieBreaker(v) -> ("tie_breaker", JsonValue.Float(v))
+    | Option(co) -> commonOptionToRecordEntry co
+
+let multiMatchToToken query fields options = 
+    let query = ("query", JsonValue.String(query))
+    let fields = [("fields", (fields |> List.map (getPropExprString >> (fun p -> JsonValue.String(p))) |> (fun (ps) -> JsonValue.Array(List.toArray ps))))]
+    let options = options |> List.map multiMatchOptionToJValue
+    let entries = query::(List.append fields options) |> List.toArray
+    JsonValue.Record(entries)
 
 let boolToToken queryF = function
     | Must(q) -> JsonValue.Record([|("must", (queryF q))|])
@@ -111,7 +124,7 @@ let rec toJsonValue query =
     let jRecord = match query with 
                     | Match(f, o) -> ("match", (matchToToken (f, o)))
                     | Bool(b) -> ("bool", boolToToken toJsonValue b)
-//                    | MultiMatch(q, fs, opts) -> ("multi_match", multiMatchToToken (q, fs, opts)))
+                    | MultiMatch(q, fs, opts) -> ("multi_match", (multiMatchToToken q fs opts))
     JsonValue.Record([|jRecord|])
 
 //    | MultiMatch of string * PropertySelector<'T, string> list * MultiMatchOption list
@@ -148,12 +161,16 @@ let b2 = Bool(
                     Match(StringField(<@ fun (x : X) -> x.a @>, "tomas"), [])
         ]))
 
+let mm = MultiMatch("tomas", [(<@ fun (x : X) -> x.ys.[0].ya @>); (<@ fun (x : X) -> x.a @>)], [TieBreaker(2.23)])
+
 let xson = toJsonValue x
 let yson = toJsonValue y
 let zson = toJsonValue z
 let b2son = toJsonValue b2
+let mmson = toJsonValue mm
 
 let xsonString = xson.ToString()
 let ysonString = yson.ToString()
 let zsonString = zson.ToString()
 let b2sonString = b2son.ToString()
+let mmsonString = mmson.ToString()

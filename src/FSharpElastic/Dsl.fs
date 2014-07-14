@@ -39,10 +39,10 @@ type MultiMatchType =
     | CrossFields
     | Phrase
     | PhrasePrefix
-    | TieBreaker of double
 
 type MultiMatchOption = 
     | Type of MultiMatchType
+    | TieBreaker of double
     | Option of CommonOption
 
 type PropertySelector<'T, 'TR> = Expr<'T -> 'TR>
