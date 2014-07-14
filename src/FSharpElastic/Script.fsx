@@ -1,75 +1,16 @@
 ﻿// Learn more about F# at http://fsharp.net. See the 'F# Tutorial' project
 // for more guidance on F# programming.
 #r "../packages/FSharp.Data.2.0.9/lib/net40/FSharp.Data.dll"
+#load "Dsl.fs"
 
+open FSharpElastic.Dsl
 open FSharp.Data
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
-// ----------------------------------------------------------------------------
-// Start by defining the domain model - once this is moved to a library, this
-// will probably be in the first file in your project. This defines just
-// the types - all processing can come after that...
-// ----------------------------------------------------------------------------
 exception InvalidPropertyExpression
-
 exception NotALambdaExpression
 
-type Operator = 
-    | And
-    | Or
-
-type ZeroTermsQuery = 
-    | All
-    | None
-
-type MatchOption = 
-    | Operator of Operator
-    | ZeroTermsQuery of ZeroTermsQuery
-    | CutoffFrequency of double
-
-//type QueryStringOptions = 
-//    | DefaultField of string
-//    | Query of string
-//    | DefaultOperator of Operator
-//    | Analyzer of string
-//    | AllowLeadingWildCard of bool
-//    | LowercaseExpandedTerms of bool
-//    | EnablePositionIncrements of bool
-//    | FuzzyMaxExpansions of int
-//
-//type MultiMatchOptions = 
-//    | Fields of string list
-//type BoolOptions = 
-//    | MinimumShouldMatch
-//    | Boost
-
-type PropertySelector<'T, 'TR> = Expr<'T -> 'TR>
-type Field<'T, 'TR> = PropertySelector<'T, 'TR> * 'TR
-
-type Fields<'T, 'TR> = PropertySelector<'T, 'TR> list * 'TR
-
-type SingleField<'T> = 
-    | All of string
-    | IntField of Field<'T, int>
-    | StringField of Field<'T, string>
-
-type Query<'T> = 
-    | Match of SingleField<'T> * MatchOption list
-    | Bool of BoolClause<'T>
-
-//    | QueryString of options: QueryStringOptions list
-//    | MultiMatch of query: string * MultiMatchOptions
-//    | Bool of clauses: BoolClause<'T> list * options: BoolOptions
-and BoolClause<'T> = 
-    | Must of Query<'T>
-    | MustNot of Query<'T>
-    | Should of Query<'T> list
-//
-
-// ----------------------------------------------------------------------------
-// The rest of the file contains the processing (formatting) functions...
-// ----------------------------------------------------------------------------
 let getPropertyChain expr = 
     let rec innerExprToString expr res = 
         match expr with
@@ -157,16 +98,23 @@ let matchToToken<'T> ((f : SingleField<'T>), opts) =
 //    | MustNot of Query<'T>
 //    | Should of Query<'T> list
 
+//let multiMatchToToken query fields options = 
+//    let items = ("query", JsonValue.String(query))::("fields", (fields |> getPropExprString |> List.map (fun p -> JsonValue.String(p)) |> (fun (ps) -> JsonValue.Array(List.toArray ps))))
+//    items
 
 let boolToToken queryF = function
     | Must(q) -> JsonValue.Record([|("must", (queryF q))|])
     | MustNot(q) -> JsonValue.Record([|("must_not", (queryF q))|])
     | Should(qs) -> JsonValue.Record([|("should", JsonValue.Array(qs |> List.map queryF |> List.toArray))|])
+
 let rec toJsonValue query = 
     let jRecord = match query with 
                     | Match(f, o) -> ("match", (matchToToken (f, o)))
                     | Bool(b) -> ("bool", boolToToken toJsonValue b)
+//                    | MultiMatch(q, fs, opts) -> ("multi_match", multiMatchToToken (q, fs, opts)))
     JsonValue.Record([|jRecord|])
+
+//    | MultiMatch of string * PropertySelector<'T, string> list * MultiMatchOption list
 
 type Y = 
     { ya : string

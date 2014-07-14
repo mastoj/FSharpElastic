@@ -47,7 +47,7 @@
     <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Library1.fs" />
+    <Compile Include="Dsl.fs" />
     <None Include="Script.fsx" />
     <None Include="packages.config" />
   </ItemGroup>
