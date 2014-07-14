@@ -163,9 +163,9 @@ let boolToToken queryF = function
     | MustNot(q) -> JsonValue.Record([|("must_not", (queryF q))|])
     | Should(qs) -> JsonValue.Record([|("should", JsonValue.Array(qs |> List.map queryF |> List.toArray))|])
 let rec toJsonValue query = 
-    let jRecord = match query with
-        | Match(f, o) -> ("match", (matchToToken (f, o)))
-        | Bool(b) -> ("bool", boolToToken toJsonValue b)
+    let jRecord = match query with 
+                    | Match(f, o) -> ("match", (matchToToken (f, o)))
+                    | Bool(b) -> ("bool", boolToToken toJsonValue b)
     JsonValue.Record([|jRecord|])
 
 type Y = 
