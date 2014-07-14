@@ -43,9 +43,11 @@ type MatchOption =
 //type BoolOptions = 
 //    | MinimumShouldMatch
 //    | Boost
-type Field<'T, 'TR> = Expr<'T -> 'TR> * 'TR
 
-type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
+type PropertySelector<'T, 'TR> = Expr<'T -> 'TR>
+type Field<'T, 'TR> = PropertySelector<'T, 'TR> * 'TR
+
+type Fields<'T, 'TR> = PropertySelector<'T, 'TR> list * 'TR
 
 type SingleField<'T> = 
     | All of string
@@ -54,19 +56,16 @@ type SingleField<'T> =
 
 type Query<'T> = 
     | Match of SingleField<'T> * MatchOption list
+    | Bool of BoolClause<'T>
 
 //    | QueryString of options: QueryStringOptions list
 //    | MultiMatch of query: string * MultiMatchOptions
 //    | Bool of clauses: BoolClause<'T> list * options: BoolOptions
-//and BoolClause<'T> = 
-//    | Must of query: Query<'T>
-//    | MustNot of query: Query<'T>
-//    | Should of queries: Query<'T> list
+and BoolClause<'T> = 
+    | Must of Query<'T>
+    | MustNot of Query<'T>
+    | Should of Query<'T> list
 //
-//type SearchQuery<'T> = 
-//    | Query of Query<'T>
-type SearchDocument = 
-    { PropX : string }
 
 // ----------------------------------------------------------------------------
 // The rest of the file contains the processing (formatting) functions...
@@ -153,9 +152,21 @@ let matchToToken<'T> ((f : SingleField<'T>), opts) =
                   |> List.toArray
         JsonValue.Record(obj)
 
-let toJsonValue query = 
-    match query with
-    | Match(f, o) -> JsonValue.Record([| ("match", (matchToToken (f, o))) |])
+    
+//        | Must of Query<'T>
+//    | MustNot of Query<'T>
+//    | Should of Query<'T> list
+
+
+let boolToToken queryF = function
+    | Must(q) -> JsonValue.Record([|("must", (queryF q))|])
+    | MustNot(q) -> JsonValue.Record([|("must_not", (queryF q))|])
+    | Should(qs) -> JsonValue.Record([|("should", JsonValue.Array(qs |> List.map queryF |> List.toArray))|])
+let rec toJsonValue query = 
+    let jRecord = match query with
+        | Match(f, o) -> ("match", (matchToToken (f, o)))
+        | Bool(b) -> ("bool", boolToToken toJsonValue b)
+    JsonValue.Record([|jRecord|])
 
 type Y = 
     { ya : string
@@ -171,11 +182,30 @@ let y = Match(
             StringField(<@ fun (y : Y) -> y.ya @>, "tomas"), [])
 let x = Match(
             StringField(lambda2, "tomas"), 
-            [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And)]
+            [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]
         )
+
+let z = Bool(
+            Must(
+                Match(
+                    StringField(lambda2, "tomas"), 
+                    [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]
+        )))
+
+let b2 = Bool(
+            Should([
+                    Match(
+                        StringField(lambda2, "tomas"), 
+                        [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]);
+                    Match(StringField(<@ fun (x : X) -> x.a @>, "tomas"), [])
+        ]))
 
 let xson = toJsonValue x
 let yson = toJsonValue y
+let zson = toJsonValue z
+let b2son = toJsonValue b2
 
 let xsonString = xson.ToString()
 let ysonString = yson.ToString()
+let zsonString = zson.ToString()
+let b2sonString = b2son.ToString()
