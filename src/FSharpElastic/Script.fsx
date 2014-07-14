@@ -1,4 +1,4 @@
-﻿// Learn more about F# at http://fsharp.net. See the 'F# Tutorial' project
+// Learn more about F# at http://fsharp.net. See the 'F# Tutorial' project
 // for more guidance on F# programming.
 
 #load "Library1.fs"
@@ -6,90 +6,27 @@ open FSharpElastic
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
+// ----------------------------------------------------------------------------
+// Start by defining the domain model - once this is moved to a library, this
+// will probably be in the first file in your project. This defines just
+// the types - all processing can come after that...
+// ----------------------------------------------------------------------------
+
 exception InvalidPropertyExpression
 exception NotALambdaExpression
-
-let getPropertyChain expr = 
-    let rec innerExprToString expr res = 
-        match expr with
-        | PropertyGet(Some(a), y, []) -> 
-            match a with
-            | PropertyGet(z) -> innerExprToString a (y.Name::res)
-            | _ -> (y.Name::res)            
-        | PropertyGet(Some(a), y, _) -> innerExprToString a res
-        | _ -> raise InvalidPropertyExpression
-    match expr with
-    | Lambda(x, expr') -> innerExprToString expr' []
-    | _ -> raise NotALambdaExpression
-
-let getPropExprString expr = 
-    expr |> getPropertyChain |> List.map (fun s -> s.ToLower()) |> String.concat "."
-
-// Define your library scripting code here
 
 type Operator =
     | And
     | Or
 
-let operatorToJson o = 
-    match o with
-    | And -> "\"and\""
-    | Or -> "\"or\""
-
 type ZeroTermsQuery = 
     | All
     | None
-
-let zeroTermsQueryToJson ztq =
-    match ztq with 
-    | All -> "\"all\""
-    | None -> "\"none\""
 
 type MatchOption = 
     | Operator of Operator
     | ZeroTermsQuery of ZeroTermsQuery
     | CutoffFrequency of double
-
-let matchOptionToJson mo =
-    match mo with
-    | Operator o -> sprintf "\"operator: %s" (operatorToJson o)
-    | ZeroTermsQuery ztq -> sprintf "\"zero_terms_query: %s" (zeroTermsQueryToJson ztq)
-    | CutoffFrequency cfq -> sprintf "\"cutoff_frequency: %f" cfq
-
-type Field<'T, 'TR> = Expr<'T -> 'TR> * 'TR
-
-type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
-
-let keyValueToString k v =
-    sprintf "\"%s\": \"%O\"" k v
-
-let fieldToJson ((expr, value):Field<'T, 'TR>) = 
-    let propertyKey = getPropExprString expr
-    keyValueToString propertyKey value
-
-let getFieldKey (expr, _) = getPropExprString expr
-let getFieldValue (_, value) = sprintf "%O" value
-
-type SingleField<'T> =
-    | All of query:string
-    | IntField of Field<'T, int>
-    | StringField of Field<'T, string>
-    with
-        member this.GetKey =
-            match this with
-            | All(_) -> "_all"
-            | IntField(f) -> getFieldKey f
-            | StringField(f) -> getFieldKey f
-        member this.GetQuery =
-            match this with
-            | All(query) -> query
-            | IntField(f) -> getFieldValue f
-            | StringField(f) -> getFieldValue f
-
-let singleFieldToJson field =
-    match field with 
-    | All(q) -> keyValueToString "_all" q
-    | StringField(f) -> fieldToJson f
 
 type QueryStringOptions = 
     | DefaultField of string
@@ -108,6 +45,15 @@ type BoolOptions =
     | MinimumShouldMatch
     | Boost
 
+type Field<'T, 'TR> = Expr<'T -> 'TR> * 'TR
+
+type Fields<'T, 'TR> = Expr<'T -> 'TR> list * 'TR
+
+type SingleField<'T> =
+    | All of query:string
+    | IntField of Field<'T, int>
+    | StringField of Field<'T, string>
+
 type Query<'T> =
     | Match of SingleField<'T> * options: MatchOption list
     | QueryString of options: QueryStringOptions list
@@ -122,7 +68,70 @@ and BoolClause<'T> =
 type SearchQuery<'T> = 
     | Query of Query<'T>
 
-type searchDocument = {PropX: string}
+type SearchDocument = {PropX: string}
+
+// ----------------------------------------------------------------------------
+// The rest of the file contains the processing (formatting) functions...
+// ----------------------------------------------------------------------------
+
+let getPropertyChain expr = 
+    let rec innerExprToString expr res = 
+        match expr with
+        | PropertyGet(Some(a), y, []) -> 
+            match a with
+            | PropertyGet(z) -> innerExprToString a (y.Name::res)
+            | _ -> (y.Name::res)            
+        | PropertyGet(Some(a), y, _) -> innerExprToString a res
+        | _ -> raise InvalidPropertyExpression
+    match expr with
+    | Lambda(x, expr') -> innerExprToString expr' []
+    | _ -> raise NotALambdaExpression
+
+let getPropExprString expr = 
+    expr |> getPropertyChain |> List.map (fun s -> s.ToLower()) |> String.concat "."
+
+let operatorToJson o = 
+    match o with
+    | And -> "\"and\""
+    | Or -> "\"or\""
+
+let zeroTermsQueryToJson ztq =
+    match ztq with 
+    | ZeroTermsQuery.All -> "\"all\""
+    | ZeroTermsQuery.None -> "\"none\""
+
+let matchOptionToJson mo =
+    match mo with
+    | Operator o -> sprintf "\"operator: %s" (operatorToJson o)
+    | ZeroTermsQuery ztq -> sprintf "\"zero_terms_query: %s" (zeroTermsQueryToJson ztq)
+    | CutoffFrequency cfq -> sprintf "\"cutoff_frequency: %f" cfq
+
+let keyValueToString k v =
+    sprintf "\"%s\": \"%O\"" k v
+
+let fieldToJson ((expr, value):Field<'T, 'TR>) = 
+    let propertyKey = getPropExprString expr
+    keyValueToString propertyKey value
+
+let getFieldKey (expr, _) = getPropExprString expr
+let getFieldValue (_, value) = sprintf "%O" value
+
+type SingleField<'T> with
+    member this.GetKey =
+        match this with
+        | All(_) -> "_all"
+        | IntField(f) -> getFieldKey f
+        | StringField(f) -> getFieldKey f
+    member this.GetQuery =
+        match this with
+        | All(query) -> query
+        | IntField(f) -> getFieldValue f
+        | StringField(f) -> getFieldValue f
+
+let singleFieldToJson field =
+    match field with 
+    | All(q) -> keyValueToString "_all" q
+    | StringField(f) -> fieldToJson f
 
 let matchToJson<'T> (field: SingleField<'T>, options: MatchOption list) =
     match field, options with
