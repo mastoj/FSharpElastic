@@ -1,12 +1,21 @@
 ﻿// Learn more about F# at http://fsharp.net. See the 'F# Tutorial' project
 // for more guidance on F# programming.
 #r "../packages/FSharp.Data.2.0.9/lib/net40/FSharp.Data.dll"
+#r "../packages/FsPickler.Json.0.9.6/lib/net45/FsPickler.Json.dll"
+#r "../packages/FsPickler.0.9.6/lib/net45/FsPickler.dll"
+#r "../packages/Newtonsoft.Json.6.0.3/lib/net45/Newtonsoft.Json.dll"
+
 #load "Dsl.fs"
 
 open FSharpElastic.Dsl
 open FSharp.Data
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
+open Newtonsoft.Json
+open Nessos.FsPickler
+open Nessos.FsPickler.Json
+open Nessos.FsPickler.Combinators
+
 
 exception InvalidPropertyExpression
 
