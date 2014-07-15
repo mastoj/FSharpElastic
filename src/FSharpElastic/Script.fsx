@@ -9,6 +9,7 @@ open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
 exception InvalidPropertyExpression
+
 exception NotALambdaExpression
 
 let getPropertyChain expr = 
@@ -27,7 +28,7 @@ let getPropertyChain expr =
 let getPropExprString expr = 
     expr
     |> getPropertyChain
-    |> List.map (fun s -> s.ToLower())
+    |> List.map (fun s -> s.Substring(0, 1).ToLower() + s.Substring(1))
     |> String.concat "."
 
 let operatorToJson o = 
@@ -93,8 +94,8 @@ let matchToToken<'T> ((f : SingleField<'T>), opts) =
                   |> List.toArray
         JsonValue.Record(obj)
 
-
-let getMultiMatchTypeString = function
+let getMultiMatchTypeString = 
+    function 
     | BestField -> "best_field"
     | MostFields -> "most_fields"
     | CrossFields -> "cross_fields"
@@ -103,31 +104,43 @@ let getMultiMatchTypeString = function
 
 let commonOptionToRecordEntry co = ("", JsonValue.Boolean(true))
 
-let multiMatchOptionToJValue = function
+let multiMatchOptionToJValue = 
+    function 
     | Type(t) -> ("type", JsonValue.String(getMultiMatchTypeString t))
     | TieBreaker(v) -> ("tie_breaker", JsonValue.Float(v))
     | Option(co) -> commonOptionToRecordEntry co
 
 let multiMatchToToken query fields options = 
     let query = ("query", JsonValue.String(query))
-    let fields = [("fields", (fields |> List.map (getPropExprString >> (fun p -> JsonValue.String(p))) |> (fun (ps) -> JsonValue.Array(List.toArray ps))))]
+    
+    let fields = 
+        [ ("fields", 
+           (fields
+            |> List.map (getPropExprString >> (fun p -> JsonValue.String(p)))
+            |> (fun ps -> JsonValue.Array(List.toArray ps)))) ]
+    
     let options = options |> List.map multiMatchOptionToJValue
-    let entries = query::(List.append fields options) |> List.toArray
+    let entries = query :: (List.append fields options)
+                  |> List.toArray
     JsonValue.Record(entries)
 
-let boolToToken queryF = function
-    | Must(q) -> JsonValue.Record([|("must", (queryF q))|])
-    | MustNot(q) -> JsonValue.Record([|("must_not", (queryF q))|])
-    | Should(qs) -> JsonValue.Record([|("should", JsonValue.Array(qs |> List.map queryF |> List.toArray))|])
+let boolToToken queryF = 
+    function 
+    | Must(q) -> JsonValue.Record([| ("must", (queryF q)) |])
+    | MustNot(q) -> JsonValue.Record([| ("must_not", (queryF q)) |])
+    | Should(qs) -> 
+        JsonValue.Record([| ("should", 
+                             JsonValue.Array(qs
+                                             |> List.map queryF
+                                             |> List.toArray)) |])
 
 let rec toJsonValue query = 
-    let jRecord = match query with 
-                    | Match(f, o) -> ("match", (matchToToken (f, o)))
-                    | Bool(b) -> ("bool", boolToToken toJsonValue b)
-                    | MultiMatch(q, fs, opts) -> ("multi_match", (multiMatchToToken q fs opts))
-    JsonValue.Record([|jRecord|])
-
-//    | MultiMatch of string * PropertySelector<'T, string> list * MultiMatchOption list
+    let jRecord = 
+        match query with
+        | Match(f, o) -> ("match", (matchToToken (f, o)))
+        | Bool(b) -> ("bool", boolToToken toJsonValue b)
+        | MultiMatch(q, fs, opts) -> ("multi_match", (multiMatchToToken q fs opts))
+    JsonValue.Record([| jRecord |])
 
 type Y = 
     { ya : string
@@ -136,39 +149,40 @@ type Y =
 type X = 
     { a : string
       b : int
-      ys : Y list }
+      ThisIsWeird : Y list }
 
-let lambda2 = <@ fun (x : X) -> x.ys.[0].ya @>
-let y = Match(
-            StringField(<@ fun (y : Y) -> y.ya @>, "tomas"), [])
-let x = Match(
-            StringField(lambda2, "tomas"), 
-            [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]
-        )
+let lambda2 = <@ fun (x : X) -> x.ThisIsWeird.[0].ya @>
+let y = Match(StringField(<@ fun (y : Y) -> y.ya @>, "tomas"), [])
 
-let z = Bool(
-            Must(
-                Match(
-                    StringField(lambda2, "tomas"), 
-                    [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]
-        )))
+let x = 
+    Match(StringField(lambda2, "tomas"), 
+          [ ZeroTermsQuery(ZeroTermsQuery.All)
+            Operator(And)
+            CutoffFrequency(0.100) ])
 
-let b2 = Bool(
-            Should([
-                    Match(
-                        StringField(lambda2, "tomas"), 
-                        [ZeroTermsQuery(ZeroTermsQuery.All); Operator(And); CutoffFrequency(0.100)]);
-                    Match(StringField(<@ fun (x : X) -> x.a @>, "tomas"), [])
-        ]))
+let z = 
+    Bool(Must(Match(StringField(lambda2, "tomas"), 
+                    [ ZeroTermsQuery(ZeroTermsQuery.All)
+                      Operator(And)
+                      CutoffFrequency(0.100) ])))
 
-let mm = MultiMatch("tomas", [(<@ fun (x : X) -> x.ys.[0].ya @>); (<@ fun (x : X) -> x.a @>)], [TieBreaker(2.23)])
+let b2 = 
+    Bool(Should([ Match(StringField(lambda2, "tomas"), 
+                        [ ZeroTermsQuery(ZeroTermsQuery.All)
+                          Operator(And)
+                          CutoffFrequency(0.100) ])
+                  Match(StringField(<@ fun (x : X) -> x.a @>, "tomas"), []) ]))
+
+let mm = 
+    MultiMatch("tomas", 
+               [ (<@ fun (x : X) -> x.ThisIsWeird.[0].ya @>)
+                 (<@ fun (x : X) -> x.a @>) ], [ TieBreaker(2.23) ])
 
 let xson = toJsonValue x
 let yson = toJsonValue y
 let zson = toJsonValue z
 let b2son = toJsonValue b2
 let mmson = toJsonValue mm
-
 let xsonString = xson.ToString()
 let ysonString = yson.ToString()
 let zsonString = zson.ToString()
